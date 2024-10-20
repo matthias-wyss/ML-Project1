@@ -14,6 +14,7 @@ def preprocess(
     max_false_percentage,
     balance_method,
     target_minority_ratio,
+    noise_ratio,
     add_bias,
     pca_components=None,
     verbose=False,
@@ -88,12 +89,9 @@ def preprocess(
             y_train,
             method=balance_method,
             target_minority_ratio=target_minority_ratio,
+            noise_ratio=noise_ratio,
             verbose=verbose,
         )
-
-    # Add a bias term to x_train and x_test if specified
-    if add_bias:
-        x_train, x_test = add_bias_term(x_train, x_test, verbose=verbose)
         
     # Perform PCA if specified
     if pca_components is not None and pca_components > 0:
@@ -104,6 +102,10 @@ def preprocess(
         x_test_centered = x_test - train_mean  
         # Apply PCA to testing data using the same components
         x_test = np.dot(x_test_centered, components)
+        
+    # Add a bias term to x_train and x_test if specified
+    if add_bias:
+        x_train, x_test = add_bias_term(x_train, x_test, verbose=verbose)
 
 
     return x_train, x_test, y_train
@@ -151,8 +153,10 @@ def perform_pca(x, n_components, verbose=False):
 
 
 
+import numpy as np
+
 def check_and_balance_data(
-    x_train, y_train, method="downsampling", target_minority_ratio=0.5, verbose=False
+    x_train, y_train, method="random_downsampling", target_minority_ratio=0.5, noise_ratio=0.1, verbose=False, random_state=None
 ):
     """
     Check for class imbalance and balance the data according to the specified method.
@@ -160,14 +164,19 @@ def check_and_balance_data(
     Args:
         x_train (numpy.ndarray): Training feature matrix.
         y_train (numpy.ndarray): Training labels.
-        method (str): Method for balancing ('downsampling' or 'upsampling').
-        target_minority_ratio (float): Desired ratio of the minority class.
+        method (str): Method for balancing ('random_downsampling', 'random_upsampling', 'noise_upsampling').
+        target_minority_ratio (float): Desired ratio of the minority class in the balanced dataset.
+        noise_ratio (float): The ratio of noise to add during noise_upsampling (ignored for other methods).
         verbose (bool): Whether to print verbose output.
+        random_state (int or None): Random seed for reproducibility.
 
     Returns:
         x_train_balanced (numpy.ndarray): Balanced training feature matrix.
         y_train_balanced (numpy.ndarray): Balanced training labels.
     """
+    if random_state is not None:
+        np.random.seed(random_state)
+
     # Identify unique classes and their counts
     unique_classes, class_counts = np.unique(y_train, return_counts=True)
 
@@ -183,27 +192,34 @@ def check_and_balance_data(
         major_class, minor_class = unique_classes[1], unique_classes[0]
         major_count, minor_count = class_counts[1], class_counts[0]
 
-    # Calculate target sizes for balancing
     total_count = major_count + minor_count
-    target_minor_size = int(target_minority_ratio * total_count)
-    target_major_size = total_count - target_minor_size
+
+    if verbose:
+        print(f'Original sizes:\n  - Majority class ({major_class}): {major_count} ({100*major_count/total_count:.2f}%)\n  - Minority class ({minor_class}): {minor_count} ({100*minor_count/total_count:.2f}%)')
+
+    # Calculate the desired total size based on the target_minority_ratio
+    target_minor_size = int((target_minority_ratio * major_count) / (1 - target_minority_ratio))
+    total_balanced_size = major_count + target_minor_size
 
     # Get indices of major and minor classes
     major_indices = np.where(y_train == major_class)[0]
     minor_indices = np.where(y_train == minor_class)[0]
 
     # Balance the dataset using the specified method
-    if method == "downsampling":
+    if method == "random_downsampling":
+        # Calculate the target majority class size to achieve the target minority ratio
+        target_major_size = int(minor_count * (1 - target_minority_ratio) / target_minority_ratio)
+
         # Downsample the majority class
-        if target_major_size < major_count:
+        if major_count > target_major_size:
             major_indices = np.random.choice(major_indices, size=target_major_size, replace=False)
 
         if verbose:
             print(
-                f"Majority class downsampled. New target sizes: {target_major_size} for majority class, {target_minor_size} for minority class."
+                f"Majority class downsampled:\n  - Class ({major_class}): {len(major_indices)} ({100*len(major_indices)/(len(major_indices)+len(minor_indices)):.2f}%)\n  - Class ({minor_class}): {len(minor_indices)} ({100*len(minor_indices)/(len(major_indices)+len(minor_indices)):.2f}%)"
             )
 
-    elif method == "upsampling":
+    elif method == "random_upsampling":
         # Upsample the minority class
         if target_minor_size > minor_count:
             extra_indices = np.random.choice(
@@ -213,14 +229,35 @@ def check_and_balance_data(
 
         if verbose:
             print(
-                f"Minority class upsampled. New target sizes: {target_major_size} for majority class, {target_minor_size} for minority class."
+                f"Minority class upsampled:\n  - Class ({major_class}): {major_count} ({100*major_count/total_balanced_size:.2f}%)\n  - Class ({minor_class}): {target_minor_size} ({100*target_minor_size/total_balanced_size:.2f}%)"
             )
 
-    elif method is None:
-        return x_train, y_train
+    elif method == "noise_upsampling":
+        # Upsample the minority class with added noise
+        if target_minor_size > minor_count:
+            extra_indices = np.random.choice(
+                minor_indices, size=target_minor_size - minor_count, replace=True
+            )
+            minor_indices = np.concatenate([minor_indices, extra_indices])
+
+            # Generate noise and add to the newly upsampled minority class data
+            new_samples = x_train[extra_indices]
+            for i in range(new_samples.shape[1]):  # For each feature column
+                col_min = np.min(new_samples[:, i])
+                col_max = np.max(new_samples[:, i])
+                noise = noise_ratio * (col_max - col_min) * np.random.randn(len(new_samples))
+                new_samples[:, i] += noise  # Add noise to each feature
+
+            # Replace the extra samples with the noisy ones
+            x_train[extra_indices] = new_samples
+
+        if verbose:
+            print(
+                f"Minority class upsampled with noise ratio {noise_ratio}:\n  - Class ({major_class}): {major_count} ({100*major_count/total_balanced_size:.2f}%)\n  - Class ({minor_class}): {target_minor_size} ({100*target_minor_size/total_balanced_size:.2f}%)"
+            )
 
     else:
-        raise ValueError(f"Method {method} not implemented. Use 'downsampling' or 'upsampling'.")
+        raise ValueError(f"Method {method} not implemented. Use 'random_downsampling', 'random_upsampling', or 'noise_upsampling'.")
 
     # Combine indices of major and minor classes and shuffle
     balanced_indices = np.concatenate([major_indices, minor_indices])
@@ -231,6 +268,11 @@ def check_and_balance_data(
     y_train_balanced = y_train[balanced_indices]
 
     return x_train_balanced, y_train_balanced
+
+
+
+
+
 
 
 def convert_labels(y_train, verbose=False):

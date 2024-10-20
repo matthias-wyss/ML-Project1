@@ -193,6 +193,7 @@ def predict_with_method(
     max_false_percentage=None,
     balance_method=None,
     target_minority_ratio=None,
+    noise_ratio=None,
     add_bias=None,
     pca_components=None,
     preprocess_verbose=False
@@ -246,6 +247,7 @@ def predict_with_method(
         max_false_percentage=max_false_percentage,
         balance_method=balance_method,
         target_minority_ratio=target_minority_ratio,
+        noise_ratio=noise_ratio,
         add_bias=add_bias,
         pca_components=pca_components,
         verbose=preprocess_verbose
@@ -378,7 +380,7 @@ def k_fold_split(x, y, k, seed=1):
 
 
 def cross_validate(x, y, k, method, replace_nan_by, column_nan_threshold, row_nan_threshold, continuous_threshold, 
-    normalization_method, outliers, z_score_threshold, max_false_percentage, balance_method, target_minority_ratio, 
+    normalization_method, outliers, z_score_threshold, max_false_percentage, balance_method, target_minority_ratio, noise_ratio, 
     add_bias, pca_components, lambda_=0.1, initial_w=None, max_iters=1000, gamma=0.01, preprocess_verbose=False, 
     cross_validation_verbose=False):
     """
@@ -446,6 +448,7 @@ def cross_validate(x, y, k, method, replace_nan_by, column_nan_threshold, row_na
             max_false_percentage=max_false_percentage, 
             balance_method=balance_method, 
             target_minority_ratio=target_minority_ratio, 
+            noise_ratio=noise_ratio, 
             add_bias=add_bias, 
             pca_components=pca_components,
             verbose=preprocess_verbose
