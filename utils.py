@@ -69,7 +69,7 @@ def initialize_weights(x, w):
     return w
 
 
-def predict(w, x, method):
+def predict(w, x, method, thresold=0):
     """
     Generate predictions based on the model weights and input features.
 
@@ -77,6 +77,7 @@ def predict(w, x, method):
         w: Weights of the model.
         x: Input features.
         method: The method used for prediction.
+        threshold: Threshold for classifying as 1 (default is 0)
 
     Returns:
         Predicted labels based on the specified method.
@@ -84,11 +85,11 @@ def predict(w, x, method):
     if method in ["logistic_regression", "reg_logistic_regression"]:
         # Compute predicted probabilities for logistic regression
         y_pred_prob = sigmoid(x @ w)
-        return (y_pred_prob >= 0.5).astype(int)  # Binary classification
+        return (y_pred_prob >= thresold).astype(int)  # Binary classification
     else:
         # Compute raw predictions for other methods
         raw_predictions = x @ w
-        return (raw_predictions >= 0).astype(int)
+        return (raw_predictions >= thresold).astype(int)
 
 
 def calculate_accuracy(y_pred, y_true):
@@ -195,7 +196,8 @@ def predict_with_method(
     target_minority_ratio=None,
     noise_ratio=None,
     add_bias=None,
-    pca_components=None,
+    pca_ratio=None,
+    decision_threshold=None,
     preprocess_verbose=False
 ):
     """
@@ -222,7 +224,8 @@ def predict_with_method(
         balance_method: method for balancing the dataset.
         target_minority_ratio: ratio for balancing the target classes.
         add_bias: boolean, whether to add a bias term to the model.
-        pca_components: int, number of components for PCA.
+        pca_ratio: float, ratio of number of features after PCA / number of features before PCA.
+        decision_threshold: float, threshold for classifying as 1.
         preprocess_verbose: boolean, if True, print preprocessing steps.
 
     Returns:
@@ -249,7 +252,7 @@ def predict_with_method(
         target_minority_ratio=target_minority_ratio,
         noise_ratio=noise_ratio,
         add_bias=add_bias,
-        pca_components=pca_components,
+        pca_ratio=pca_ratio,
         verbose=preprocess_verbose
     )
 
@@ -270,7 +273,7 @@ def predict_with_method(
         raise ValueError("Invalid method specified.")
 
     # Make predictions on the test set using the helper function
-    y_pred = predict(w, preprocessed_x_test, method)
+    y_pred = predict(w, preprocessed_x_test, method, decision_threshold)
 
     # Map 0 to -1 for binary classification
     y_pred = np.where(y_pred == 0, -1, y_pred)
@@ -291,6 +294,7 @@ def test_with_method(
     x_te,
     y_te,
     method,
+    decision_threshold,
     lambda_=0.1,
     initial_w=None,
     max_iters=1000,
@@ -306,6 +310,7 @@ def test_with_method(
         x_te: numpy.ndarray, testing features.
         y_te: numpy.ndarray, testing labels.
         method: str, the training method to use.
+        decision_threshold: float, threshold for classifying as 1.
         lambda_: float, regularization parameter.
         initial_w: numpy.ndarray, initial weights.
         max_iters: int, maximum iterations for gradient descent.
@@ -336,7 +341,7 @@ def test_with_method(
         raise ValueError("Invalid method specified.")
 
     # Make predictions on the test set
-    y_pred = predict(w, x_te, method)
+    y_pred = predict(w, x_te, method, decision_threshold)
 
     # Calculate accuracy and F1 score
     accuracy = calculate_accuracy(y_pred, y_te)
@@ -381,7 +386,7 @@ def k_fold_split(x, y, k, seed=1):
 
 def cross_validate(x, y, k, method, replace_nan_by, column_nan_threshold, row_nan_threshold, continuous_threshold, 
     normalization_method, outliers, z_score_threshold, max_false_percentage, balance_method, target_minority_ratio, noise_ratio, 
-    add_bias, pca_components, lambda_=0.1, initial_w=None, max_iters=1000, gamma=0.01, preprocess_verbose=False, 
+    add_bias, pca_ratio, decision_threshold, lambda_=0.1, initial_w=None, max_iters=1000, gamma=0.01, preprocess_verbose=False, 
     cross_validation_verbose=False):
     """
     Perform k-fold cross-validation.
@@ -402,7 +407,8 @@ def cross_validate(x, y, k, method, replace_nan_by, column_nan_threshold, row_na
         balance_method: method for balancing the dataset.
         target_minority_ratio: ratio for balancing the target classes.
         add_bias: boolean, whether to add a bias term to the model.
-        pca_components: int, number of components for PCA.
+        pca_ratio: float, ratio of number of features after PCA / number of features before PCA.
+        decision_threshold: float, threshold for classifying as 1.
         lambda_: float, regularization parameter for methods like Ridge and Logistic Regression.
         initial_w: numpy array, initial weights for gradient methods.
         max_iters: integer, maximum number of iterations for gradient methods.
@@ -450,7 +456,7 @@ def cross_validate(x, y, k, method, replace_nan_by, column_nan_threshold, row_na
             target_minority_ratio=target_minority_ratio, 
             noise_ratio=noise_ratio, 
             add_bias=add_bias, 
-            pca_components=pca_components,
+            pca_ratio=pca_ratio,
             verbose=preprocess_verbose
         )
         
@@ -463,6 +469,7 @@ def cross_validate(x, y, k, method, replace_nan_by, column_nan_threshold, row_na
         # Test the model with the specified training method and calculate accuracy and F1 score
         accuracy, f1 = test_with_method(
             preprocessed_x_train, preprocessed_y_train, preprocessed_x_test, y_te, method, 
+            decision_threshold=decision_threshold,
             lambda_=lambda_, 
             initial_w=initial_w, 
             max_iters=max_iters, 

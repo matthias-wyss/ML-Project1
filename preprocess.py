@@ -16,7 +16,7 @@ def preprocess(
     target_minority_ratio,
     noise_ratio,
     add_bias,
-    pca_components=None,
+    pca_ratio=None,
     verbose=False,
 ):
     """
@@ -39,7 +39,7 @@ def preprocess(
         balance_method (str): Method for balancing the data ('downsampling' or 'upsampling').
         target_minority_ratio (float): Desired ratio of the minority class.
         add_bias (bool): Whether to add a bias term to the feature matrix.
-        pca_components (int): number of components for PCA.
+        pca_ratio (int): ratio of number of features after PCA / number of features before PCA
         verbose (bool): Whether to print verbose output.
 
     Returns:
@@ -94,9 +94,9 @@ def preprocess(
         )
         
     # Perform PCA if specified
-    if pca_components is not None and pca_components > 0:
+    if pca_ratio is not None and pca_ratio > 0 and pca_ratio <= 1:
         # Apply PCA to training data
-        x_train, components, train_mean = perform_pca(x_train, n_components=pca_components, verbose=verbose)  
+        x_train, components, train_mean = perform_pca(x_train, ratio=pca_ratio, verbose=verbose)  
         
         # Center x_test using the mean from x_train
         x_test_centered = x_test - train_mean  
@@ -112,19 +112,25 @@ def preprocess(
 
 
 
-def perform_pca(x, n_components, verbose=False):
+def perform_pca(x, ratio, verbose=False):
     """
     Perform PCA on the given dataset.
 
     Args:
         x (numpy.ndarray): The input data (samples x features).
-        n_components (int): Number of principal components to keep.
+        ratio (float): Ratio of number of features after PCA / number of features before PCA.
 
     Returns:
         x_pca (numpy.ndarray): Transformed data in the PCA space.
         components (numpy.ndarray): The principal components (eigenvectors).
         mean (numpy.ndarray): Mean vector used for centering.
     """
+    # Get the number of features before PCA
+    n_features_before = x.shape[1]
+
+    # Calculate the number of components to keep
+    n_components = int(n_features_before * ratio)
+
     # Center the data
     x_mean = np.mean(x, axis=0)
     x_centered = x - x_mean
@@ -147,7 +153,7 @@ def perform_pca(x, n_components, verbose=False):
     x_pca = np.dot(x_centered, top_eigenvectors)
     
     if verbose:
-        print(f'PCA performs to reach {n_components} components.')
+        print(f'PCA performed to reduce features from {n_features_before} to {n_components}.')
 
     return x_pca, top_eigenvectors, x_mean
 
